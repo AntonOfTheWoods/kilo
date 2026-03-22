@@ -19,16 +19,16 @@ package generators
 import (
 	"io"
 
-	"k8s.io/gengo/generator"
-	"k8s.io/gengo/namer"
-	"k8s.io/gengo/types"
+	"k8s.io/gengo/v2/generator"
+	"k8s.io/gengo/v2/namer"
+	"k8s.io/gengo/v2/types"
 
 	"k8s.io/code-generator/cmd/client-gen/generators/util"
 )
 
 // versionInterfaceGenerator generates the per-version interface file.
 type versionInterfaceGenerator struct {
-	generator.DefaultGen
+	generator.GoGenerator
 	outputPackage             string
 	imports                   namer.ImportTracker
 	types                     []*types.Type
@@ -68,7 +68,7 @@ func (g *versionInterfaceGenerator) GenerateType(c *generator.Context, t *types.
 
 	sw.Do(versionTemplate, m)
 	for _, typeDef := range g.types {
-		tags, err := util.ParseClientGenTags(typeDef.SecondClosestCommentLines)
+		tags, err := util.ParseClientGenTags(append(typeDef.SecondClosestCommentLines, typeDef.CommentLines...))
 		if err != nil {
 			return err
 		}

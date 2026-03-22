@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package mesh
@@ -30,9 +31,7 @@ import (
 // - private IP to which hostname resolves
 // - private IP assigned to interface of default route
 // - private IP assigned to local interface
-// - public IP to which hostname resolves
-// - public IP assigned to interface of default route
-// - public IP assigned to local interface
+// - nil if no private IP was found
 // It selects the public IP address in the following order:
 // - public IP to which hostname resolves
 // - public IP assigned to interface of default route
@@ -41,7 +40,8 @@ import (
 // - private IP assigned to interface of default route
 // - private IP assigned to local interface
 // - if no IP was found, return nil and an error.
-func getIP(hostname string, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error) {
+// If allowedCIDRs is not empty, only IPs within these CIDRs will be considered for private IP selection.
+func getIP(hostname string, allowedCIDRs []*net.IPNet, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error) {
 	ignore := make(map[string]struct{})
 	for i := range ignoreIfaces {
 		if ignoreIfaces[i] == 0 {
@@ -61,6 +61,7 @@ func getIP(hostname string, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error)
 			ignore[oneAddressCIDR(ip.IP).String()] = struct{}{}
 		}
 	}
+
 	var hostPriv, hostPub []*net.IPNet
 	{
 		// Check IPs to which hostname resolves first.
@@ -71,6 +72,9 @@ func getIP(hostname string, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error)
 				return nil, nil, fmt.Errorf("failed to search locally assigned addresses: %v", err)
 			}
 			if !ok {
+				continue
+			}
+			if isLocal(ip.IP) {
 				continue
 			}
 			ip.Mask = mask
@@ -141,6 +145,10 @@ func getIP(hostname string, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error)
 		if _, ok := ignore[tmpPriv[i].String()]; ok {
 			continue
 		}
+		// If allowedCIDRs is specified, filter private IPs by these CIDRs.
+		if len(allowedCIDRs) > 0 && !isInCIDRs(tmpPriv[i].IP, allowedCIDRs) {
+			continue
+		}
 		priv = append(priv, tmpPriv[i])
 	}
 	for i := range tmpPub {
@@ -153,7 +161,8 @@ func getIP(hostname string, ignoreIfaces ...int) (*net.IPNet, *net.IPNet, error)
 		return nil, nil, errors.New("no valid IP was found")
 	}
 	if len(priv) == 0 {
-		priv = pub
+		// If no private IPs were found, use nil.
+		priv = append(priv, nil)
 	}
 	if len(pub) == 0 {
 		pub = priv
@@ -285,4 +294,14 @@ func defaultInterface() (*net.Interface, error) {
 	}
 
 	return nil, errors.New("failed to find default route")
+}
+
+// isInCIDRs checks if the given IP is within any of the provided CIDRs.
+func isInCIDRs(ip net.IP, cidrs []*net.IPNet) bool {
+	for _, cidr := range cidrs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

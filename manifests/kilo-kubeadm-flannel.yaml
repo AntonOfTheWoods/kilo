@@ -23,14 +23,13 @@ rules:
   - peers
   verbs:
   - list
-  - update
   - watch
 - apiGroups:
   - apiextensions.k8s.io
   resources:
   - customresourcedefinitions
   verbs:
-  - create
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -41,9 +40,9 @@ roleRef:
   kind: ClusterRole
   name: kilo
 subjects:
-  - kind: ServiceAccount
-    name: kilo
-    namespace: kube-system
+- kind: ServiceAccount
+  name: kilo
+  namespace: kube-system
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -52,31 +51,42 @@ metadata:
   namespace: kube-system
   labels:
     app.kubernetes.io/name: kilo
+    app.kubernetes.io/part-of: kilo
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: kilo
+      app.kubernetes.io/part-of: kilo
   template:
     metadata:
       labels:
         app.kubernetes.io/name: kilo
+        app.kubernetes.io/part-of: kilo
     spec:
       serviceAccountName: kilo
       hostNetwork: true
       containers:
       - name: kilo
-        image: squat/kilo
+        image: squat/kilo:0.7.0
         args:
         - --kubeconfig=/etc/kubernetes/kubeconfig
         - --hostname=$(NODE_NAME)
         - --cni=false
         - --compatibility=flannel
         - --local=false
+        - --internal-cidr=$(NODE_IP)/32
         env:
         - name: NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        ports:
+        - containerPort: 1107
+          name: metrics
         securityContext:
           privileged: true
         volumeMounts:

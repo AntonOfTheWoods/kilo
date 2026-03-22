@@ -1,0 +1,9 @@
+**
+
+!/flake.lock
+!/flake.nix
+!/cmd
+!/pkg
+!/go.mod
+!/go.sum
+!/vendor

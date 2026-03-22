@@ -41,8 +41,13 @@ func (i *ipip) CleanUp() error {
 }
 
 // Gw returns the correct gateway IP associated with the given node.
-func (i *ipip) Gw(_, internal net.IP, _ *net.IPNet) net.IP {
+func (i *ipip) Gw(_, internal, _ net.IP, _ *net.IPNet) net.IP {
 	return internal
+}
+
+// CNICompatibilityIP is a no-op for IPIP.
+func (i *ipip) CNICompatibilityIP() *net.IPNet {
+	return nil
 }
 
 // Index returns the index of the IPIP interface.
@@ -65,19 +70,20 @@ func (i *ipip) Init(base int) error {
 
 // Rules returns a set of iptables rules that are necessary
 // when traffic between nodes must be encapsulated.
-func (i *ipip) Rules(nodes []*net.IPNet) []iptables.Rule {
-	var rules []iptables.Rule
-	rules = append(rules, iptables.NewIPv4Chain("filter", "KILO-IPIP"))
-	rules = append(rules, iptables.NewIPv6Chain("filter", "KILO-IPIP"))
-	rules = append(rules, iptables.NewIPv4Rule("filter", "INPUT", "-m", "comment", "--comment", "Kilo: jump to IPIP chain", "-p", "4", "-j", "KILO-IPIP"))
-	rules = append(rules, iptables.NewIPv6Rule("filter", "INPUT", "-m", "comment", "--comment", "Kilo: jump to IPIP chain", "-p", "4", "-j", "KILO-IPIP"))
+func (i *ipip) Rules(nodes []*net.IPNet) iptables.RuleSet {
+	rules := iptables.RuleSet{}
+	proto := ipipProtocolName()
+	rules.AddToAppend(iptables.NewIPv4Chain("filter", "KILO-IPIP"))
+	rules.AddToAppend(iptables.NewIPv6Chain("filter", "KILO-IPIP"))
+	rules.AddToAppend(iptables.NewIPv4Rule("filter", "INPUT", "-p", proto, "-m", "comment", "--comment", "Kilo: jump to IPIP chain", "-j", "KILO-IPIP"))
+	rules.AddToAppend(iptables.NewIPv6Rule("filter", "INPUT", "-p", proto, "-m", "comment", "--comment", "Kilo: jump to IPIP chain", "-j", "KILO-IPIP"))
 	for _, n := range nodes {
 		// Accept encapsulated traffic from peers.
-		rules = append(rules, iptables.NewRule(iptables.GetProtocol(len(n.IP)), "filter", "KILO-IPIP", "-m", "comment", "--comment", "Kilo: allow IPIP traffic", "-s", n.IP.String(), "-j", "ACCEPT"))
+		rules.AddToPrepend(iptables.NewRule(iptables.GetProtocol(n.IP), "filter", "KILO-IPIP", "-s", n.String(), "-m", "comment", "--comment", "Kilo: allow IPIP traffic", "-j", "ACCEPT"))
 	}
 	// Drop all other IPIP traffic.
-	rules = append(rules, iptables.NewIPv4Rule("filter", "INPUT", "-m", "comment", "--comment", "Kilo: reject other IPIP traffic", "-p", "4", "-j", "DROP"))
-	rules = append(rules, iptables.NewIPv6Rule("filter", "INPUT", "-m", "comment", "--comment", "Kilo: reject other IPIP traffic", "-p", "4", "-j", "DROP"))
+	rules.AddToAppend(iptables.NewIPv4Rule("filter", "INPUT", "-p", proto, "-m", "comment", "--comment", "Kilo: reject other IPIP traffic", "-j", "DROP"))
+	rules.AddToAppend(iptables.NewIPv6Rule("filter", "INPUT", "-p", proto, "-m", "comment", "--comment", "Kilo: reject other IPIP traffic", "-j", "DROP"))
 
 	return rules
 }
